@@ -1,76 +1,79 @@
+#This code was create with help from chapgpt OpenAI
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
+import os
+from openai import OpenAI
 
-# Function to extract flood-related information from a URL, excluding headings or titles
-def extract_flood_info_from_url(url, keyword=None, max_paragraphs=5):
+# Use environment variable for API key
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) 
+
+# List of Santa Clara County zip codes
+santa_clara_zip_codes = {
+    "95002", "95008", "95013", "95014", "95020", "95032", "95035", "95037",
+    "95046", "95101", "95110", "95111", "95112", "95113", "95116", "95117",
+    "95118", "95119", "95120", "95121", "95122", "95123", "95124", "95125",
+    "95126", "95127", "95128", "95129", "95130", "95131", "95132", "95133",
+    "95134", "95135", "95136", "95138", "95139", "95140", "95141", "95148",
+    "95150", "95151", "95152", "95153", "95154", "95155", "95156", "95157",
+    "95158", "95159", "95160", "95161", "95164", "95170", "95172", "95173",
+    "95190", "95191", "95192", "95193", "95194", "95196"
+}
+
+# Create a wrapper function
+def get_completion(prompt, model="gpt-3.5-turbo"):
     try:
-        response = requests.get(url)
-        response.raise_for_status()  # Raise an error for bad responses
-        soup = BeautifulSoup(response.content, 'html.parser')
-
-        # Extract title separately
-        title = soup.title.string if soup.title else 'No title found'
-        
-        # Extract paragraphs only, filtering out likely titles or very short text
-        paragraphs = [
-            para.get_text().strip() for para in soup.find_all('p') 
-            if para.get_text().strip() and len(para.get_text().strip()) > 30  # Avoid very short text
-        ]
-        
-        # If a keyword is provided, filter paragraphs to include only those with the keyword
-        if keyword:
-            paragraphs = [para for para in paragraphs if keyword.lower() in para.lower()]
-        
-        # Limit the paragraphs to the specified max_paragraphs
-        key_points = paragraphs[:max_paragraphs]
-
-        return title, key_points
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": "You are a flood preparedness expert. Provide detailed, actionable advice on flood prevention, safety, equipment, and preparation. Generate local resources based on the given zip code. Create a personalized emergency kit checklist based on user input about residence type and pets. Generate five relevant FAQs based on common concerns related to flood preparedness."},
+                      {"role": "user", "content": prompt}]
+        )
+        return completion.choices[0].message.content
     except Exception as e:
-        return str(e), []
+        return f"Error generating advice: {str(e)}"
 
-# Streamlit UI
-st.set_page_config(page_title="Flood Information Extractor", page_icon="🌊")
+# Create our Streamlit app
+st.set_page_config(page_title="Flood Preparedness Advisor", layout="wide")
+st.title("Santa Clara County Flood Preparedness Advisor")
+st.markdown("### Get personalized flood preparedness advice based on your location and needs.")
 
-# Sidebar for inputs
-st.sidebar.header("Flood Information Extractor 🌊")
-st.sidebar.write("Extract relevant flood-related information from any webpage.")
-
-# User input for URL and keyword
-url_input = st.sidebar.text_input("Enter the URL of the flood-related website:")
-keyword_input = st.sidebar.text_input("Optional: Specify a flood-related term to focus on:")
-max_paragraphs = st.sidebar.slider("Number of key points to display:", min_value=1, max_value=20, value=5)
-
-# Main page content
-st.title("🌊 Flood Information Extractor")
-st.write("Use this tool to quickly retrieve key flood information from any webpage. Simply enter the URL, specify a keyword if desired, and get flood-related insights in bullet points.")
-
-st.markdown("---")  # Divider
-
-# Fetch and display information when the button is clicked
-if st.sidebar.button("Extract Flood Info"):
-    if url_input:
-        with st.spinner("Extracting information... Please wait."):
-            title, key_points = extract_flood_info_from_url(url_input, keyword=keyword_input, max_paragraphs=max_paragraphs)
+# Main form layout
+with st.form(key="chat"):
+    # User input section
+    st.subheader("Your Information")
+    
+    zip_code = st.text_input("Enter your zip code (Santa Clara County only)", placeholder="e.g., 95112")
+    prompt = st.text_input("What would you like to know about flood preparedness?", placeholder="Ask your question here...")
+    
+    # Additional user inputs for personalization
+    residence_type = st.selectbox("Type of residence", ["House", "Apartment", "Mobile Home", "Other"])
+    has_pets = st.checkbox("Do you have pets?")
+    specific_concerns = st.text_input("Any specific concerns (e.g., flooding history, health conditions)", placeholder="Describe your concerns...")
+    wheelchair_accessibility = st.checkbox("Include wheelchair accessibility considerations")
+    preferred_communication = st.selectbox("Preferred communication method", ["Text", "Email", "Phone Call"])
+    
+    submitted = st.form_submit_button("Submit")
+    
+    # Modify the prompt based on user inputs
+    if wheelchair_accessibility:
+        prompt += "\n\nAlso, please provide specific advice considering wheelchair accessibility."
         
-        st.subheader("🔍 Extracted Information")
-        
-        if title:
-            st.markdown(f"**Page Title:** {title}")
-        
-        if key_points:
-            st.write("### Key Flood Information:")
-            for i, point in enumerate(key_points, 1):
-                st.write(f"{i}. {point}")
+    # Adding user residence type, pets, and specific concerns to the prompt
+    prompt += f"\n\nUser lives in a {residence_type}. "
+    if has_pets:
+        prompt += "User has pets that need consideration in the plan. "
+    if specific_concerns:
+        prompt += f"User has the following specific concerns: {specific_concerns}. "
+    prompt += f"User prefers to receive information via {preferred_communication}. "
+    prompt += f"User's zip code is {zip_code}."
+
+    # Check if the zip code is within Santa Clara County
+    if submitted:
+        if zip_code in santa_clara_zip_codes:
+            with st.spinner("Generating advice..."):
+                response = get_completion(prompt)
+            st.success("Here’s your flood preparedness advice:")
+            st.markdown(response)
         else:
-            st.warning("No relevant flood information found. Try refining your keyword or checking the URL content.")
-        
-    else:
-        st.sidebar.error("Please enter a valid URL.")
-else:
-    st.info("Enter a URL in the sidebar and click 'Extract Flood Info' to start.")
-
-
+            st.warning("Please enter a valid zip code within Santa Clara County.")
 
 
 
